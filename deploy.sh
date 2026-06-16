@@ -1,6 +1,6 @@
 #!/bin/bash
 
-PROJECT_DIR="/path/to/Vertical-Bio-Design-for-Webcam-Model"
+PROJECT_DIR="/root/Vertical-Bio-Design-for-Webcam-Model"
 cd $PROJECT_DIR || exit 1
 
 echo "🚀 Начинаю деплой на продакшен..."
