@@ -1,35 +1,29 @@
 #!/bin/bash
 
-PROJECT_DIR="/root/Vertical-Bio-Design-for-Webcam-Model"
-cd $PROJECT_DIR || exit 1
+# Автоматически находит папку проекта относительно скрипта
+PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-echo "🚀 Начинаю деплой на продакшен..."
+cd "$PROJECT_DIR" || exit 1
 
-# 1. Обновляем код
+echo "🚀 Деплой из: $PROJECT_DIR"
+
 echo "📥 Git pull..."
 git reset --hard
 git pull origin main
 
-# 2. Устанавливаем зависимости (если добавились новые)
 echo "📦 Установка зависимостей..."
 npm install
 
-# 3. Собираем фронт (создается папка dist/)
-echo "🔨 Сборка проекта..."
+echo "🔨 Сборка..."
 npm run build
 
-# 4. Проверяем что dist создана
 if [ ! -d "dist" ]; then
-    echo "❌ Ошибка: папка dist не создана!"
+    echo "❌ Ошибка: dist не создана!"
     exit 1
 fi
 
-# 5. Перезапускаем только бэкенд (он раздает статику)
-echo "🔄 Перезапуск сервера..."
+echo "🔄 Перезапуск..."
 pm2 restart bio-server || pm2 start server/index.js --name "bio-server"
-
-# 6. Сохраняем конфигурацию PM2
 pm2 save
 
-echo "✅ Деплой завершен!"
-echo "🌐 Сайт доступен на http://$(hostname -I | awk '{print $1}'):3000"
+echo "✅ Готово! http://$(hostname -I | awk '{print $1}'):3000"
