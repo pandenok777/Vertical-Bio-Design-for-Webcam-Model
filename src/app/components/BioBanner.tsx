@@ -1,6 +1,7 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import { Heart, Star, Gift, Camera, MessageCircle, Zap, Download, Pencil, Check, X, Plus, Trash2, Image as ImageIcon, Upload, Code, Copy, Shuffle } from "lucide-react";
 import { toPng } from "html-to-image";
+import html2canvas from "html2canvas";
 import { FONTS } from "./data/fonts";
 import { THEMES, type ColorTheme } from "./data/themes";
 import { CORNERS } from "./data/corners";
@@ -11,6 +12,28 @@ function pickOther(cur: number, max: number) {
   if (max <= 1) return cur;
   let n = Math.floor(Math.random() * max);
   return n === cur ? (n + 1) % max : n;
+}
+
+async function waitForResources(container: HTMLElement) {
+  if (document.fonts) {
+    await document.fonts.ready;
+  }
+
+  const images = Array.from(container.querySelectorAll("img"));
+  await Promise.all(
+    images.map((img) =>
+      img.complete && img.naturalWidth !== 0
+        ? Promise.resolve()
+        : new Promise<void>((resolve) => {
+            img.onload = () => resolve();
+            img.onerror = () => resolve();
+            if (img.complete) resolve();
+          })
+    )
+  );
+
+  // give the browser a moment to finish paint/layout
+  await new Promise((r) => setTimeout(r, 300));
 }
 
 function EditableText({ value, onChange, editing, style, className, multiline }: { value: string; onChange: (v: string) => void; editing: boolean; style?: React.CSSProperties; className?: string; multiline?: boolean; }) {
@@ -155,15 +178,34 @@ export function BioBanner() {
     if (!bannerRef.current) return;
     setDownloading(true);
     try {
-      const dataUrl = await toPng(bannerRef.current, {
-        pixelRatio: 2,
-        cacheBust: true,
-        backgroundColor: theme.pageBackground,
-      });
+      await waitForResources(bannerRef.current);
+
+      let dataUrl: string;
+      try {
+        dataUrl = await toPng(bannerRef.current, {
+          pixelRatio: 2,
+          cacheBust: false,
+          skipFonts: true,
+          backgroundColor: theme.pageBackground,
+        });
+      } catch (toPngError) {
+        console.warn("toPng failed, falling back to html2canvas", toPngError);
+        const canvas = await html2canvas(bannerRef.current, {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: theme.pageBackground,
+          logging: false,
+        });
+        dataUrl = canvas.toDataURL("image/png");
+      }
+
       const a = document.createElement("a");
       a.download = `${name.replace(/\s+/g, "_")}_bio.png`;
       a.href = dataUrl;
       a.click();
+    } catch (error) {
+      console.error("Download failed", error);
+      alert("❌ Failed to download image. See the browser console for details.");
     } finally {
       setDownloading(false);
     }
@@ -174,11 +216,26 @@ export function BioBanner() {
     if (!bannerRef.current) return;
     setDownloading(true);
     try {
-      const dataUrl = await toPng(bannerRef.current, {
-        pixelRatio: 2,
-        cacheBust: true,
-        backgroundColor: theme.pageBackground,
-      });
+      await waitForResources(bannerRef.current);
+
+      let dataUrl: string;
+      try {
+        dataUrl = await toPng(bannerRef.current, {
+          pixelRatio: 2,
+          cacheBust: false,
+          skipFonts: true,
+          backgroundColor: theme.pageBackground,
+        });
+      } catch (toPngError) {
+        console.warn("toPng failed, falling back to html2canvas", toPngError);
+        const canvas = await html2canvas(bannerRef.current, {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: theme.pageBackground,
+          logging: false,
+        });
+        dataUrl = canvas.toDataURL("image/png");
+      }
       
       const response = await fetch(`/api/upload`, {
         method: 'POST',
@@ -305,7 +362,7 @@ export function BioBanner() {
       </div>
 
       {/* ════════════════════════════════════════════════════════ BANNER CARD ════════════════════════════════════════════════════════ */}
-      <div ref={bannerRef} className="relative w-full max-w-md mx-auto my-24 p-6 sm:p-8 rounded-3xl border shadow-2xl overflow-hidden" style={{ background: theme.cardBg, borderColor: `${theme.accent}33`, boxShadow: `0 25px 80px -20px ${theme.accent}40` }}>
+      <div ref={bannerRef} className="relative w-full max-w-md mx-auto my-24 p-6 sm:p-8 rounded-3xl border shadow-2xl overflow-hidden" style={{ background: theme.cardGradient, borderColor: `${theme.accent}33`, boxShadow: `0 25px 80px -20px ${theme.accent}40` }}>
         
         {/* ambient glows */}
         <div className="pointer-events-none absolute -top-20 -left-20 w-64 h-64 rounded-full blur-3xl opacity-30" style={{ background: theme.accent }} />
