@@ -77,7 +77,6 @@ async function captureElement(element: HTMLElement, backgroundColor: string): Pr
   const height = element.offsetHeight;
 
   const clone = element.cloneNode(true) as HTMLElement;
-  inlineStyles(element, clone);
 
   clone.style.width = `${width}px`;
   clone.style.height = `${height}px`;
@@ -123,6 +122,7 @@ async function captureElement(element: HTMLElement, backgroundColor: string): Pr
   }
 
   // Fallback: client-side rendering
+  inlineStyles(element, clone);
   const wrapper = document.createElement("div");
   wrapper.style.position = "fixed";
   wrapper.style.left = "-9999px";

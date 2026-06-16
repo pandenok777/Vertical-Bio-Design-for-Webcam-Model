@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const puppeteer = require('puppeteer');
+const { Mutex } = require('async-mutex');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -62,30 +63,53 @@ app.get('/api/images', (req, res) => {
     }
 });
 
+// Persistent browser for screenshot rendering
+let browserPromise = null;
+const renderMutex = new Mutex();
+
+async function getBrowser() {
+    if (!browserPromise) {
+        browserPromise = puppeteer.launch({
+            headless: 'new',
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--disable-web-security',
+                '--disable-features=IsolateOrigins,site-per-process',
+            ],
+        }).catch((err) => {
+            console.error('Failed to launch browser:', err);
+            browserPromise = null;
+            throw err;
+        });
+    }
+    return browserPromise;
+}
+
 app.post('/api/render', async (req, res) => {
-    let browser = null;
+    const release = await renderMutex.acquire();
     try {
         const { html, css, fontCss, width, height, backgroundColor } = req.body;
         if (!html || !css || !width || !height) {
             return res.status(400).json({ error: 'Missing html, css, width or height' });
         }
 
-        browser = await puppeteer.launch({
-            headless: 'new',
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
-        });
-
+        const browser = await getBrowser();
         const page = await browser.newPage();
-        await page.setViewport({ width: Math.ceil(width), height: Math.ceil(height), deviceScaleFactor: 2 });
+        try {
+            await page.setViewport({ width: Math.ceil(width), height: Math.ceil(height), deviceScaleFactor: 2 });
 
-        const fullHtml = `<!DOCTYPE html>
+            const fullHtml = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
   <style>${fontCss || ''}</style>
   <style>${css}</style>
   <style>
-    body { margin: 0; padding: 0; background: ${backgroundColor || '#000000'}; display: flex; justify-content: center; align-items: flex-start; }
+    html, body { margin: 0; padding: 0; }
+    body { background: ${backgroundColor || '#000000'}; display: flex; justify-content: center; align-items: flex-start; }
   </style>
 </head>
 <body>
@@ -93,19 +117,22 @@ app.post('/api/render', async (req, res) => {
 </body>
 </html>`;
 
-        await page.setContent(fullHtml, { waitUntil: 'networkidle0' });
-        await page.evaluate(() => document.fonts.ready);
-        await new Promise(r => setTimeout(r, 500));
+            await page.setContent(fullHtml, { waitUntil: 'networkidle0' });
+            await page.evaluate(() => document.fonts.ready);
+            await new Promise(r => setTimeout(r, 1500));
 
-        const screenshot = await page.screenshot({ type: 'png', fullPage: false });
-        const dataUrl = `data:image/png;base64,${screenshot.toString('base64')}`;
+            const screenshot = await page.screenshot({ type: 'png', fullPage: false });
+            const dataUrl = `data:image/png;base64,${screenshot.toString('base64')}`;
 
-        res.json({ success: true, image: dataUrl });
+            res.json({ success: true, image: dataUrl });
+        } finally {
+            await page.close().catch(() => {});
+        }
     } catch (error) {
         console.error('Render error:', error);
         res.status(500).json({ error: 'Failed to render image', details: error.message });
     } finally {
-        if (browser) await browser.close();
+        release();
     }
 });
 
