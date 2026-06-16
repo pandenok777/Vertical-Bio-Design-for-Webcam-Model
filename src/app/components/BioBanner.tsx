@@ -2,6 +2,18 @@ import { useRef, useState, useCallback, useEffect } from "react";
 import { Heart, Star, Gift, Camera, MessageCircle, Zap, Download, Pencil, Check, X, Plus, Trash2, Image as ImageIcon, Upload, Code, Copy, Shuffle } from "lucide-react";
 import { toPng } from "html-to-image";
 import html2canvas from "html2canvas";
+
+function inlineStyles(src: Element, dst: Element) {
+  const computed = window.getComputedStyle(src);
+  const target = dst as HTMLElement;
+  for (let i = 0; i < computed.length; i++) {
+    const prop = computed[i];
+    target.style.setProperty(prop, computed.getPropertyValue(prop), computed.getPropertyPriority(prop));
+  }
+  for (let i = 0; i < src.children.length; i++) {
+    inlineStyles(src.children[i], dst.children[i]);
+  }
+}
 import { FONTS } from "./data/fonts";
 import { THEMES, type ColorTheme } from "./data/themes";
 import { CORNERS } from "./data/corners";
@@ -34,6 +46,95 @@ async function waitForResources(container: HTMLElement) {
 
   // give the browser a moment to finish paint/layout
   await new Promise((r) => setTimeout(r, 300));
+}
+
+async function captureElement(element: HTMLElement, backgroundColor: string): Promise<string> {
+  await waitForResources(element);
+
+  const width = element.offsetWidth;
+  const height = element.offsetHeight;
+
+  // Clone into an off-screen container and inline all computed styles.
+  // This isolates the card from the page layout (flex/scroll/transform).
+  const clone = element.cloneNode(true) as HTMLElement;
+  inlineStyles(element, clone);
+
+  const wrapper = document.createElement("div");
+  wrapper.style.position = "fixed";
+  wrapper.style.left = "-9999px";
+  wrapper.style.top = "0";
+  wrapper.style.width = `${width}px`;
+  wrapper.style.height = `${height}px`;
+  wrapper.style.overflow = "hidden";
+  wrapper.style.visibility = "hidden";
+  wrapper.style.zIndex = "-1";
+  wrapper.appendChild(clone);
+
+  clone.style.width = `${width}px`;
+  clone.style.height = `${height}px`;
+  clone.style.margin = "0";
+  clone.style.position = "relative";
+  clone.style.maxWidth = "none";
+  clone.style.minWidth = "auto";
+  clone.style.transform = "none";
+  clone.style.overflow = "hidden";
+  clone.style.boxSizing = "border-box";
+
+  document.body.appendChild(wrapper);
+
+  // Wait for the cloned DOM to settle.
+  await new Promise((r) => setTimeout(r, 250));
+
+  let dataUrl = "";
+
+  try {
+    const canvas = await html2canvas(clone, {
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      foreignObjectRendering: true,
+      backgroundColor,
+      logging: false,
+      width,
+      height,
+      x: 0,
+      y: 0,
+      scrollX: 0,
+      scrollY: 0,
+      windowWidth: width,
+      windowHeight: height,
+    });
+    dataUrl = canvas.toDataURL("image/png");
+  } catch (err) {
+    console.warn("html2canvas (foreignObjectRendering) failed:", err);
+  }
+
+  if (!dataUrl) {
+    try {
+      dataUrl = await toPng(clone, {
+        pixelRatio: 2,
+        cacheBust: false,
+        skipFonts: true,
+        backgroundColor,
+      });
+    } catch (err) {
+      console.warn("html-to-image toPng failed:", err);
+    }
+  }
+
+  if (!dataUrl) {
+    const canvas = await html2canvas(clone, {
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      backgroundColor,
+      logging: false,
+    });
+    dataUrl = canvas.toDataURL("image/png");
+  }
+
+  document.body.removeChild(wrapper);
+  return dataUrl;
 }
 
 function EditableText({ value, onChange, editing, style, className, multiline }: { value: string; onChange: (v: string) => void; editing: boolean; style?: React.CSSProperties; className?: string; multiline?: boolean; }) {
@@ -177,28 +278,11 @@ export function BioBanner() {
   const handleDownload = useCallback(async () => {
     if (!bannerRef.current) return;
     setDownloading(true);
+    setEditing(false);
     try {
-      await waitForResources(bannerRef.current);
-
-      let dataUrl: string;
-      try {
-        dataUrl = await toPng(bannerRef.current, {
-          pixelRatio: 2,
-          cacheBust: false,
-          skipFonts: true,
-          backgroundColor: theme.pageBackground,
-        });
-      } catch (toPngError) {
-        console.warn("toPng failed, falling back to html2canvas", toPngError);
-        const canvas = await html2canvas(bannerRef.current, {
-          scale: 2,
-          useCORS: true,
-          backgroundColor: theme.pageBackground,
-          logging: false,
-        });
-        dataUrl = canvas.toDataURL("image/png");
-      }
-
+      // wait for editing UI to revert to read-only spans
+      await new Promise((r) => setTimeout(r, 150));
+      const dataUrl = await captureElement(bannerRef.current, theme.pageBackground);
       const a = document.createElement("a");
       a.download = `${name.replace(/\s+/g, "_")}_bio.png`;
       a.href = dataUrl;
@@ -215,27 +299,11 @@ export function BioBanner() {
   const saveToServer = async () => {
     if (!bannerRef.current) return;
     setDownloading(true);
+    setEditing(false);
     try {
-      await waitForResources(bannerRef.current);
-
-      let dataUrl: string;
-      try {
-        dataUrl = await toPng(bannerRef.current, {
-          pixelRatio: 2,
-          cacheBust: false,
-          skipFonts: true,
-          backgroundColor: theme.pageBackground,
-        });
-      } catch (toPngError) {
-        console.warn("toPng failed, falling back to html2canvas", toPngError);
-        const canvas = await html2canvas(bannerRef.current, {
-          scale: 2,
-          useCORS: true,
-          backgroundColor: theme.pageBackground,
-          logging: false,
-        });
-        dataUrl = canvas.toDataURL("image/png");
-      }
+      // wait for editing UI to revert to read-only spans
+      await new Promise((r) => setTimeout(r, 150));
+      const dataUrl = await captureElement(bannerRef.current, theme.pageBackground);
       
       const response = await fetch(`/api/upload`, {
         method: 'POST',
@@ -388,7 +456,7 @@ export function BioBanner() {
         <div className="flex justify-center -mt-16 mb-4 relative z-10">
           <div className="relative">
             <div className="absolute inset-0 rounded-full blur opacity-40" style={{ background: `conic-gradient(from 0deg, ${theme.accent}, ${theme.accent2}, ${theme.accent})` }} />
-            <PhotoSlot round src={avatarSrc} onUpload={setAvatarSrc} editing={editing} className="relative w-28 h-28 border-4 shadow-xl" style={{ borderColor: theme.cardBg }} label={<Camera size={24} className="opacity-40" />} />
+            <PhotoSlot round src={avatarSrc} onUpload={setAvatarSrc} editing={editing} className="relative w-28 h-28 border-4 shadow-xl" style={{ borderColor: theme.pageBackground }} label={<Camera size={24} className="opacity-40" />} />
             {[0, 60, 120, 180, 240, 300].map((deg, i) => (
               <div key={i} className="absolute w-1.5 h-1.5 rounded-full" style={{ background: theme.accent2, top: "50%", left: "50%", transform: `rotate(${deg}deg) translateY(-56px)` }} />
             ))}
