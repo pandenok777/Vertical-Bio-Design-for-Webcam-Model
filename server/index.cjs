@@ -3,6 +3,7 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
+const puppeteer = require('puppeteer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -58,6 +59,53 @@ app.get('/api/images', (req, res) => {
         res.json(files);
     } catch (error) {
         res.status(500).json({ error: 'Failed to list images' });
+    }
+});
+
+app.post('/api/render', async (req, res) => {
+    let browser = null;
+    try {
+        const { html, css, fontCss, width, height, backgroundColor } = req.body;
+        if (!html || !css || !width || !height) {
+            return res.status(400).json({ error: 'Missing html, css, width or height' });
+        }
+
+        browser = await puppeteer.launch({
+            headless: 'new',
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+        });
+
+        const page = await browser.newPage();
+        await page.setViewport({ width: Math.ceil(width), height: Math.ceil(height), deviceScaleFactor: 2 });
+
+        const fullHtml = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>${fontCss || ''}</style>
+  <style>${css}</style>
+  <style>
+    body { margin: 0; padding: 0; background: ${backgroundColor || '#000000'}; display: flex; justify-content: center; align-items: flex-start; }
+  </style>
+</head>
+<body>
+  ${html}
+</body>
+</html>`;
+
+        await page.setContent(fullHtml, { waitUntil: 'networkidle0' });
+        await page.evaluate(() => document.fonts.ready);
+        await new Promise(r => setTimeout(r, 500));
+
+        const screenshot = await page.screenshot({ type: 'png', fullPage: false });
+        const dataUrl = `data:image/png;base64,${screenshot.toString('base64')}`;
+
+        res.json({ success: true, image: dataUrl });
+    } catch (error) {
+        console.error('Render error:', error);
+        res.status(500).json({ error: 'Failed to render image', details: error.message });
+    } finally {
+        if (browser) await browser.close();
     }
 });
 

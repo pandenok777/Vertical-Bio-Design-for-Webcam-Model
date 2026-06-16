@@ -48,26 +48,36 @@ async function waitForResources(container: HTMLElement) {
   await new Promise((r) => setTimeout(r, 300));
 }
 
+async function getAllStyles(): Promise<string> {
+  const parts: string[] = [];
+  for (const sheet of Array.from(document.styleSheets)) {
+    try {
+      for (const rule of Array.from(sheet.cssRules)) {
+        parts.push(rule.cssText);
+      }
+    } catch (e) {
+      // CORS-protected stylesheet — try to fetch it directly
+      if (sheet.href) {
+        try {
+          const res = await fetch(sheet.href);
+          parts.push(await res.text());
+        } catch (err) {
+          console.warn("Failed to fetch stylesheet", sheet.href, err);
+        }
+      }
+    }
+  }
+  return parts.join("\n");
+}
+
 async function captureElement(element: HTMLElement, backgroundColor: string): Promise<string> {
   await waitForResources(element);
 
   const width = element.offsetWidth;
   const height = element.offsetHeight;
 
-  // Clone into an off-screen container and inline all computed styles.
-  // This isolates the card from the page layout (flex/scroll/transform).
   const clone = element.cloneNode(true) as HTMLElement;
   inlineStyles(element, clone);
-
-  const wrapper = document.createElement("div");
-  wrapper.style.position = "fixed";
-  wrapper.style.left = "-9999px";
-  wrapper.style.top = "0";
-  wrapper.style.width = `${width}px`;
-  wrapper.style.height = `${height}px`;
-  wrapper.style.overflow = "hidden";
-  wrapper.style.pointerEvents = "none";
-  wrapper.appendChild(clone);
 
   clone.style.width = `${width}px`;
   clone.style.height = `${height}px`;
@@ -79,9 +89,51 @@ async function captureElement(element: HTMLElement, backgroundColor: string): Pr
   clone.style.overflow = "hidden";
   clone.style.boxSizing = "border-box";
 
+  const html = clone.outerHTML;
+  const css = await getAllStyles();
+
+  const fontLink = document.getElementById("bio-gfonts") as HTMLLinkElement | null;
+  let fontCss = "";
+  if (fontLink?.href) {
+    try {
+      const res = await fetch(fontLink.href);
+      fontCss = await res.text();
+    } catch (e) {
+      console.warn("Failed to fetch font CSS", e);
+    }
+  }
+
+  try {
+    const response = await fetch("/api/render", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ html, css, fontCss, width, height, backgroundColor }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Server render failed: ${text}`);
+    }
+
+    const data = await response.json();
+    if (data.image) return data.image;
+    throw new Error("Server render returned no image");
+  } catch (err) {
+    console.warn("Server render failed, falling back to client-side capture:", err);
+  }
+
+  // Fallback: client-side rendering
+  const wrapper = document.createElement("div");
+  wrapper.style.position = "fixed";
+  wrapper.style.left = "-9999px";
+  wrapper.style.top = "0";
+  wrapper.style.width = `${width}px`;
+  wrapper.style.height = `${height}px`;
+  wrapper.style.overflow = "hidden";
+  wrapper.style.pointerEvents = "none";
+  wrapper.appendChild(clone);
   document.body.appendChild(wrapper);
 
-  // Wait for the cloned DOM to settle.
   await new Promise((r) => setTimeout(r, 250));
 
   let dataUrl = "";
