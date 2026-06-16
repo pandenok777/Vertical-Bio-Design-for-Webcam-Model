@@ -7,6 +7,7 @@ const { v4: uuidv4 } = require('uuid');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
+const DIST_DIR = path.join(__dirname, '..', 'dist'); // Папка со сборкой
 
 // Создаем папку uploads если её нет
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -15,17 +16,16 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
+
+// Раздаем загруженные картинки
 app.use('/uploads', express.static(UPLOADS_DIR));
 
-// Загрузка изображения на сервер
+// API роуты
 app.post('/api/upload', (req, res) => {
   try {
-    const { image } = req.body; // base64 строка
-    if (!image) {
-      return res.status(400).json({ error: 'No image provided' });
-    }
+    const { image } = req.body;
+    if (!image) return res.status(400).json({ error: 'No image provided' });
     
-    // Убираем префикс data:image/png;base64,
     const base64Data = image.replace(/^data:image\/\w+;base64,/, '');
     const buffer = Buffer.from(base64Data, 'base64');
     
@@ -34,30 +34,24 @@ app.post('/api/upload', (req, res) => {
     
     fs.writeFileSync(filepath, buffer);
     
-    // Возвращаем URL картинки
-    const host = req.headers.host || `localhost:${PORT}`;
     const protocol = req.headers['x-forwarded-proto'] || 'http';
+    const host = req.headers.host || `localhost:${PORT}`;
     const imageUrl = `${protocol}://${host}/uploads/${filename}`;
     
-    res.json({ 
-      success: true, 
-      url: imageUrl,
-      filename: filename 
-    });
+    res.json({ success: true, url: imageUrl, filename });
   } catch (error) {
     console.error('Upload error:', error);
     res.status(500).json({ error: 'Failed to save image' });
   }
 });
 
-// Получение списка всех сохраненных картинок
 app.get('/api/images', (req, res) => {
   try {
     const files = fs.readdirSync(UPLOADS_DIR)
       .filter(f => f.endsWith('.png'))
       .map(f => {
-        const host = req.headers.host || `localhost:${PORT}`;
         const protocol = req.headers['x-forwarded-proto'] || 'http';
+        const host = req.headers.host || `localhost:${PORT}`;
         return {
           filename: f,
           url: `${protocol}://${host}/uploads/${f}`,
@@ -71,7 +65,16 @@ app.get('/api/images', (req, res) => {
   }
 });
 
+// ★★★ Раздаем статику из dist (React приложение) ★★★
+app.use(express.static(DIST_DIR));
+
+// ★★★ Для React Router - отдаем index.html на все запросы ★★★
+app.get('*', (req, res) => {
+  res.sendFile(path.join(DIST_DIR, 'index.html'));
+});
+
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📁 Uploads directory: ${UPLOADS_DIR}`);
+  console.log(`🚀 Production server running on port ${PORT}`);
+  console.log(`🌐 App: http://localhost:${PORT}`);
+  console.log(`📁 Uploads: ${UPLOADS_DIR}`);
 });
