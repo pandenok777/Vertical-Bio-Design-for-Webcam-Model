@@ -23,7 +23,7 @@ if [ ! -d "dist" ]; then
 fi
 
 echo "🔄 Перезапуск..."
-pm2 restart bio-server || pm2 start server/index.js --name "bio-server"
+pm2 restart bio-server || pm2 start server/index.cjs --name "bio-server"
 pm2 save
 
 echo "✅ Готово! http://$(hostname -I | awk '{print $1}'):3000"

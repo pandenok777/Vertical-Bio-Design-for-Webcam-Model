@@ -38,7 +38,7 @@ fi
 
 # Перезапуск
 echo "🔄 Перезапуск..."
-pm2 restart bio-server 2>/dev/null || pm2 start server/index.js --name "bio-server"
+pm2 restart bio-server 2>/dev/null || pm2 start server/index.cjs --name "bio-server"
 pm2 save
 
 echo "✅ Готово!"
