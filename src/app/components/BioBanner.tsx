@@ -66,8 +66,7 @@ async function captureElement(element: HTMLElement, backgroundColor: string): Pr
   wrapper.style.width = `${width}px`;
   wrapper.style.height = `${height}px`;
   wrapper.style.overflow = "hidden";
-  wrapper.style.visibility = "hidden";
-  wrapper.style.zIndex = "-1";
+  wrapper.style.pointerEvents = "none";
   wrapper.appendChild(clone);
 
   clone.style.width = `${width}px`;
