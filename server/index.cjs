@@ -69,7 +69,7 @@ app.get('/api/images', (req, res) => {
 app.use(express.static(DIST_DIR));
 
 // ★★★ Для React Router - отдаем index.html на все запросы ★★★
-app.get('*', (req, res) => {
+app.get('/*', (req, res) => {
   res.sendFile(path.join(DIST_DIR, 'index.html'));
 });
 
