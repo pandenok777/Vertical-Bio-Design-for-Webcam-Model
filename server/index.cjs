@@ -8,7 +8,7 @@ const { Mutex } = require('async-mutex');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const UPLOADS_DIR = path.join(__dirname, 'uploads');
+const UPLOADS_DIR = process.env.UPLOADS_DIR || '/var/www/bio-uploads';
 const DIST_DIR = path.join(__dirname, '..', 'dist');
 
 if (!fs.existsSync(UPLOADS_DIR)) {
